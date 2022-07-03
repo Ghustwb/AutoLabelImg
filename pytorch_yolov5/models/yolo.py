@@ -5,9 +5,11 @@ from models.experimental import *
 
 
 class Detect(nn.Module):
+    stride = None  # strides computed during build
+    export = False  # onnx export
+
     def __init__(self, nc=80, anchors=(), ch=()):  # detection layer
         super(Detect, self).__init__()
-        self.stride = None  # strides computed during build
         self.nc = nc  # number of classes
         self.no = nc + 5  # number of outputs per anchor
         self.nl = len(anchors)  # number of detection layers
@@ -17,15 +19,10 @@ class Detect(nn.Module):
         self.register_buffer('anchors', a)  # shape(nl,na,2)
         self.register_buffer('anchor_grid', a.clone().view(self.nl, 1, -1, 1, 1, 2))  # shape(nl,1,na,1,1,2)
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
-        self.export = False  # onnx export
 
     def forward(self, x):
         # x = x.copy()  # for profiling
         z = []  # inference output
-
-        if not hasattr(self, 'export'):
-            self.export = False
-
         self.training |= self.export
         for i in range(self.nl):
             x[i] = self.m[i](x[i])  # conv
@@ -37,10 +34,9 @@ class Detect(nn.Module):
                     self.grid[i] = self._make_grid(nx, ny).to(x[i].device)
 
                 y = x[i].sigmoid()
-                y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + self.grid[i].to(x[i].device)) * self.stride[i]  # xy
+                y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
                 y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
                 z.append(y.view(bs, -1, self.no))
-
         return x if self.training else (torch.cat(z, 1), x)
 
     @staticmethod
@@ -148,14 +144,95 @@ class Model(nn.Module):
     #         if type(m) is Bottleneck:
     #             print('%10.3g' % (m.w.detach().sigmoid() * 2))  # shortcut weights
 
+    # def fuse(self):  # fuse model Conv2d() + BatchNorm2d() layers
+    #     print('Fusing layers... ', end='')
+    #     for m in self.model.modules():
+    #         if type(m) is Conv:
+    #             m._non_persistent_buffers_set = set()  # pytorch 1.6.0 compatability
+    #             m.conv = torch_utils.fuse_conv_and_bn(m.conv, m.bn)  # update conv
+    #             m.bn = None  # remove batchnorm
+    #             m.forward = m.fuseforward  # update forward
+    #     self.info()
+    #     return self
+
+    # --------------------------repvgg & shuffle refuse---------------------------------
     def fuse(self):  # fuse model Conv2d() + BatchNorm2d() layers
-        print('Fusing layers... ', end='')
+        print('Fusing layers... ')
         for m in self.model.modules():
-            if type(m) is Conv:
-                m._non_persistent_buffers_set = set()  # pytorch 1.6.0 compatability
+            # print(m)
+            if type(m) is RepVGGBlock:
+                if hasattr(m, 'rbr_1x1'):
+                    # print(m)
+                    kernel, bias = m.get_equivalent_kernel_bias()
+                    rbr_reparam = nn.Conv2d(in_channels=m.rbr_dense.conv.in_channels,
+                                            out_channels=m.rbr_dense.conv.out_channels,
+                                            kernel_size=m.rbr_dense.conv.kernel_size,
+                                            stride=m.rbr_dense.conv.stride,
+                                            padding=m.rbr_dense.conv.padding, dilation=m.rbr_dense.conv.dilation,
+                                            groups=m.rbr_dense.conv.groups, bias=True)
+                    rbr_reparam.weight.data = kernel
+                    rbr_reparam.bias.data = bias
+                    for para in self.parameters():
+                        para.detach_()
+                    m.rbr_dense = rbr_reparam
+                    # m.__delattr__('rbr_dense')
+                    m.__delattr__('rbr_1x1')
+                    if hasattr(self, 'rbr_identity'):
+                        m.__delattr__('rbr_identity')
+                    if hasattr(self, 'id_tensor'):
+                        m.__delattr__('id_tensor')
+                    m.deploy = True
+                    delattr(m, 'se')
+                    m.forward = m.fusevggforward  # update forward
+                # continue
+                # print(m)
+            if type(m) is Conv and hasattr(m, 'bn'):
+                # print(m)
                 m.conv = torch_utils.fuse_conv_and_bn(m.conv, m.bn)  # update conv
-                m.bn = None  # remove batchnorm
+                delattr(m, 'bn')  # remove batchnorm
                 m.forward = m.fuseforward  # update forward
+
+            if type(m) is CBH and hasattr(m, 'bn'):
+                m.conv = torch_utils.fuse_conv_and_bn(m.conv, m.bn)  # update conv
+                delattr(m, 'bn')  # remove batchnorm
+                m.forward = m.fuseforward  # update forward
+
+            if type(m) is Shuffle_Block:
+                if hasattr(m, 'branch1'):
+                    re_branch1 = nn.Sequential(
+                        nn.Conv2d(m.branch1[0].in_channels, m.branch1[0].out_channels,
+                                  kernel_size=m.branch1[0].kernel_size, stride=m.branch1[0].stride,
+                                  padding=m.branch1[0].padding, groups=m.branch1[0].groups),
+                        nn.Conv2d(m.branch1[2].in_channels, m.branch1[2].out_channels,
+                                  kernel_size=m.branch1[2].kernel_size, stride=m.branch1[2].stride,
+                                  padding=m.branch1[2].padding, bias=False),
+                        nn.ReLU(inplace=True),
+                    )
+                    re_branch1[0] = torch_utils.fuse_conv_and_bn(m.branch1[0], m.branch1[1])
+                    re_branch1[1] = torch_utils.fuse_conv_and_bn(m.branch1[2], m.branch1[3])
+                    # pdb.set_trace()
+                    # print(m.branch1[0])
+                    m.branch1 = re_branch1
+                if hasattr(m, 'branch2'):
+                    re_branch2 = nn.Sequential(
+                        nn.Conv2d(m.branch2[0].in_channels, m.branch2[0].out_channels,
+                                  kernel_size=m.branch2[0].kernel_size, stride=m.branch2[0].stride,
+                                  padding=m.branch2[0].padding, groups=m.branch2[0].groups),
+                        nn.ReLU(inplace=True),
+                        nn.Conv2d(m.branch2[3].in_channels, m.branch2[3].out_channels,
+                                  kernel_size=m.branch2[3].kernel_size, stride=m.branch2[3].stride,
+                                  padding=m.branch2[3].padding, bias=False),
+                        nn.Conv2d(m.branch2[5].in_channels, m.branch2[5].out_channels,
+                                  kernel_size=m.branch2[5].kernel_size, stride=m.branch2[5].stride,
+                                  padding=m.branch2[5].padding, groups=m.branch2[5].groups),
+                        nn.ReLU(inplace=True),
+                    )
+                    re_branch2[0] = torch_utils.fuse_conv_and_bn(m.branch2[0], m.branch2[1])
+                    re_branch2[2] = torch_utils.fuse_conv_and_bn(m.branch2[3], m.branch2[4])
+                    re_branch2[3] = torch_utils.fuse_conv_and_bn(m.branch2[5], m.branch2[6])
+                    # pdb.set_trace()
+                    m.branch2 = re_branch2
+                    # print(m.branch2)
         self.info()
         return self
 
@@ -179,7 +256,8 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                 pass
 
         n = max(round(n * gd), 1) if n > 1 else n  # depth gain
-        if m in [nn.Conv2d, Conv, Bottleneck, SPP, DWConv, MixConv2d, Focus, CrossConv, BottleneckCSP, C3]:
+        if m in [nn.Conv2d, Conv, Bottleneck, SPP, DWConv, MixConv2d, Focus, CrossConv, BottleneckCSP, C3,
+                 SELayer, SEBlock, LC_Block, Dense, RepVGGBlock, conv_bn_relu_maxpool, DWConvblock, Shuffle_Block]:
             c1, c2 = ch[f], args[0]
 
             # Normal
@@ -208,6 +286,8 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             args = [ch[f]]
         elif m is Concat:
             c2 = sum([ch[-1 if x == -1 else x + 1] for x in f])
+        elif m is ADD:
+            c2 = sum([ch[-1 if x == -1 else x + 1] for x in f]) // 2
         elif m is Detect:
             args.append([ch[x + 1] for x in f])
             if isinstance(args[1], int):  # number of anchors
