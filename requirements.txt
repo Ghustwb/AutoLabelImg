@@ -2,6 +2,10 @@ natsort
 strsimpy
 easygui
 pyautogui
+scikit-image
+matplotlib
+pyyaml
+tqdm
 pyqt5>=5.14.1
 lxml>=4.6.5
 opencv-python>=4.1.1.26

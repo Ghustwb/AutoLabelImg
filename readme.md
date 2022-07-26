@@ -131,3 +131,25 @@ typing 'labeling' in terminal to open the software.
 }
 ```
 
+---
+
+**ISSUE**
+
+```shell
+QObject::moveToThread: Current thread (0x562abab7a200) is not the object's thread (0x562abd2a0a70).
+Cannot move to target thread (0x562abab7a200)
+
+qt.qpa.plugin: Could not load the Qt platform plugin "xcb" in "/home/lcg/anaconda3/envs/autolabel/lib/python3.7/site-packages/cv2/qt/plugins" even though it was found.
+This application failed to start because no Qt platform plugin could be initialized. Reinstalling the application may fix this problem.
+
+Available platform plugins are: xcb, eglfs, linuxfb, minimal, minimalegl, offscreen, vnc, wayland-egl, wayland, wayland-xcomposite-egl, wayland-xcomposite-glx, webgl.
+
+Aborted (core dumped)
+
+==================================================================================
+# reinstall opencv-python to lower cersion
+pip uninstall opencv-python
+pip install opencv-python==4.1.2.30
+
+```
+
