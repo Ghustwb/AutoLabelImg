@@ -2414,6 +2414,10 @@ class MainWindow(QMainWindow, WindowMixin):
                         key=child.tag
                         if key in common_property.keys():
                             child.text=common_property[key]
+                        if key == 'size':
+                            child.find('width').text=str(im0.shape[1])
+                            child.find('height').text=str(im0.shape[0])
+                            child.find('depth').text=str(im0.shape[2])
                     result=change_result_type_yolov5(boxes,scores,labels)
                     if len(result)>0:
                         for j in range(len(result)):
@@ -2427,81 +2431,7 @@ class MainWindow(QMainWindow, WindowMixin):
             QMessageBox.information(self,u'Sorry!',u'something is wrong. ({})'.format(e))
             print(e.__traceback__.tb_frame.f_globals["__file__"])
             print(e.__traceback__.tb_lineno)
-                 
-    def yolox_auto_labeling(self):
-        try:
-            tree = ET.ElementTree(file='./data/origin.xml')
-            root=tree.getroot()
-            for child in root.findall('object'):
-                template_obj=child#保存一个物体的样板
-                root.remove(child)
-            tree.write('./data/template.xml')
-            #=====def some function=====
-            def change_obj_property(detect_result,template_obj):
-                temp_obj=template_obj
-                for child in temp_obj:
-                    key=child.tag
-                    if key in detect_result.keys():
-                        child.text=detect_result[key]
-                    if key=='bndbox':
-                        for gchild in child:
-                            gkey=gchild.tag
-                            gchild.text=str(detect_result[gkey])
-                return temp_obj
-                
-            def change_result_type_yolov5(boxes,scores,labels):
-                result=[]
-                for box, score, label in zip(boxes, scores, labels):
-                    if score>0.3:
-                        try:
-                            new_obj={}
-                            new_obj['name']=label
-                            new_obj['xmin']=int(box[0])
-                            new_obj['ymin']=int(box[1])
-                            new_obj['xmax']=int(box[2])
-                            new_obj['ymax']=int(box[3])
-                            result.append(new_obj)
-                        except:
-                            print('labels_info have no label: '+str(label))
-                            pass
-                return result
-
-            source=os.path.dirname(self.filePath)
-            xml_path=self.defaultSaveDir
-            
-            weight_path='pytorch_yolox/weights'
-            weight_list=[]
-            for item in sorted(os.listdir(weight_path)):
-                if item.endswith('.h5') or item.endswith('.pt') or item.endswith('.pth'):
-                    weight_list.append(item)
-            items = tuple(weight_list)
-            if len(weight_list)>0 :
-                weights, ok = QInputDialog.getItem(self, "Select",
-                "Model weights file(weights file should under 'pytorch_yolovx/weights'):", items, 0, False)
-                if not ok:
-                    return
-                else:
-                    weights=os.path.join(weight_path,weights)
-            else:
-                weights,_ = QFileDialog.getOpenFileName(self,"'pytorch_yolox/weights' is empty, choose model weights file:")
-                if not (weights.endswith('.pt') or weights.endswith('.pth')):
-                    QMessageBox.information(self,u'Wrong!',u'weights file must endswith .h5 or .pt or .pth')
-                    return
-            conf_thres=0.3
-            iou_thres=0.5
-            # Initialize
-
-        except Exception as e:
-            QMessageBox.information(self,u'Sorry!',u'something in YOLOX is wrong. ({})'.format(e))
-
-
-
-
-
-
-
-
-
+ 
 
 
     def auto_labeling(self):
