@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import codecs,os,sys,platform,subprocess,random,natsort,cv2,easygui
+from cv2 import FlannBasedMatcher
 import xml.etree.ElementTree as ET
 from copy import deepcopy
 from strsimpy.jaro_winkler import JaroWinkler
@@ -16,6 +17,7 @@ sys.path.append('pytorch_yolov5/')
 from models.experimental import *
 from utils.datasets import *
 from utils.utils import *
+from models.common import *
 
 from libs.combobox import ComboBox
 from libs.resources import *
@@ -1640,7 +1642,7 @@ class MainWindow(QMainWindow, WindowMixin):
                     index+=1
             QMessageBox.information(self,u'Done!',u'Batch rename done.')
         except Exception as e:
-            QMessageBox.information(self,u'Sorry!',u'something is wrong. ({})'.format(e))
+            QMessageBox.information(self,u'Sorry!',u'something is wrong in batch_rename_img. ({})'.format(e))
         
     def rename_img_xml(self):
         """batch rename img's and its corresponding xml's name. 
@@ -1688,7 +1690,7 @@ class MainWindow(QMainWindow, WindowMixin):
                     pass
             QMessageBox.information(self,u'Done!',u'Batch rename done.')
         except Exception as e:
-            QMessageBox.information(self,u'Sorry!',u'something is wrong. ({})'.format(e))
+            QMessageBox.information(self,u'Sorry!',u'something is wrong in rename_img_xml. ({})'.format(e))
             
     def make_duplicate_xml(self):
         """copy last xml file to local img, make sure last xml exist. 
@@ -1727,7 +1729,7 @@ class MainWindow(QMainWindow, WindowMixin):
                 QMessageBox.information(self,u'Sorry!',u'please ensure the first xml file exists.')
                 return
         except Exception as e:
-            QMessageBox.information(self,u'Sorry!',u'something is wrong. ({})'.format(e))
+            QMessageBox.information(self,u'Sorry!',u'something is wrong in make_duplicate_xml. ({})'.format(e))
             
     def question_1(self):
         yes, no = QMessageBox.Yes, QMessageBox.No
@@ -1853,7 +1855,7 @@ class MainWindow(QMainWindow, WindowMixin):
             xmllist = os.listdir(xml_folder_path)
             QMessageBox.information(self,u'Info!',u'done, now have {} imgs, and {} xmls'.format(len(imglist),len(xmllist)))
         except Exception as e:
-            QMessageBox.information(self,u'Sorry!',u'something is wrong. ({})'.format(e))
+            QMessageBox.information(self,u'Sorry!',u'something is wrong in remove_extra_img_xml. ({})'.format(e))
         
     def show_folder_infor(self):
         """show current img folder path and xml folder path and img's number and xml's number.
@@ -1916,7 +1918,7 @@ class MainWindow(QMainWindow, WindowMixin):
             QMessageBox.information(self,u'Info',info)
             
         except Exception as e:
-            QMessageBox.information(self,u'Sorry!',u'something is wrong. ({})'.format(e))
+            QMessageBox.information(self,u'Sorry!',u'something is wrong in show_label_info. ({})'.format(e))
     
     def extract_video(self):
         """extract imgs from video.
@@ -1947,7 +1949,7 @@ class MainWindow(QMainWindow, WindowMixin):
             cap.release()
             QMessageBox.information(self,u'Done!',u'video extract done.')
         except Exception as e:
-            QMessageBox.information(self,u'Sorry!',u'something is wrong. ({})'.format(e))
+            QMessageBox.information(self,u'Sorry!',u'something is wrong in extract_video. ({})'.format(e))
 
     def extract_stream(self):
         """extract imgs from stream, 'stream_path' usually start with rtsp or rtmp.
@@ -1993,7 +1995,7 @@ class MainWindow(QMainWindow, WindowMixin):
             cap.release()
             QMessageBox.information(self,u'Done!',u'stream extract done.')
         except Exception as e:
-            QMessageBox.information(self,u'Sorry!',u'something is wrong. ({})'.format(e))
+            QMessageBox.information(self,u'Sorry!',u'something is wrong in extract_stream. ({})'.format(e))
            
     def batch_resize_img(self):
         """input Wdith and Height to resize all img to one shape.
@@ -2017,7 +2019,7 @@ class MainWindow(QMainWindow, WindowMixin):
                 
             QMessageBox.information(self,u'Done!',u'batch resize done.')
         except Exception as e:
-            QMessageBox.information(self,u'Sorry!',u'something is wrong. ({})'.format(e))
+            QMessageBox.information(self,u'Sorry!',u'something is wrong in batch_resize_img. ({})'.format(e))
         
     def merge_video(self):
         """merge all img in one path to one video, video will saved in img's parent path.
@@ -2191,7 +2193,7 @@ class MainWindow(QMainWindow, WindowMixin):
             cv2.destroyAllWindows()
             QMessageBox.information(self,u'Done!',u'video auto annotation done.')
         except Exception as e:
-            QMessageBox.information(self,u'Sorry!',u'something is wrong. ({})'.format(e))
+            QMessageBox.information(self,u'Sorry!',u'something is wrong in annotation_video. ({})'.format(e))
     
     def change_label_name(self):
         """change label name. from 'origin' to 'target'
@@ -2232,7 +2234,7 @@ class MainWindow(QMainWindow, WindowMixin):
                         
             QMessageBox.information(self,u'Done!',u'label name changed!')
         except Exception as e:
-            QMessageBox.information(self,u'Sorry!',u'something is wrong. ({})'.format(e))
+            QMessageBox.information(self,u'Sorry!',u'something is wrong in change_label_name. ({})'.format(e))
         
     def fix_xml_property(self):
         """fix xml's property such as size,folder,filename,path.
@@ -2269,7 +2271,7 @@ class MainWindow(QMainWindow, WindowMixin):
                     tree.write(xmlPath)
             QMessageBox.information(self,u"Done!",u"fix xml's property done!")
         except Exception as e:
-            QMessageBox.information(self,u'Sorry!',u'something is wrong. ({})'.format(e))
+            QMessageBox.information(self,u'Sorry!',u'something is wrong in fix_xml_property. ({})'.format(e))
      
     def yolov5_auto_labeling(self):
         try:
@@ -2309,6 +2311,7 @@ class MainWindow(QMainWindow, WindowMixin):
                             pass
                 return result
 
+        
             source=os.path.dirname(self.filePath)
             xml_path=self.defaultSaveDir
             
@@ -2330,15 +2333,15 @@ class MainWindow(QMainWindow, WindowMixin):
                 if not (weights.endswith('.pt') or weights.endswith('.pth')):
                     QMessageBox.information(self,u'Wrong!',u'weights file must endswith .h5 or .pt or .pth')
                     return
-            conf_thres=0.5
+            conf_thres=0.3
             iou_thres=0.5
+            half = False
             # Initialize
-            device = torch_utils.select_device('0')
-            half = device.type != 'cpu'  # half precision only supported on CUDA
+            device = torch_utils.select_device('cpu')
 
             # Load model and label name.
-            model = attempt_load(weights, map_location=device)  # load FP32 model
-            names = model.module.names if hasattr(model, 'module') else model.names
+            model = DetectMultiBackend(weights, device=device, dnn=False, data="./pytorch_yolov5/data/VOC.yaml", fp16=False)
+            stride, names, pt = model.stride, model.names, model.pt
             if len(names)== 1:
                 needed_labels=names
             else:
@@ -2347,7 +2350,7 @@ class MainWindow(QMainWindow, WindowMixin):
             imgsz,OK=QInputDialog.getInt(self,'Integer input dialog','input img size(k*32):',value=640)
             if not OK:
                 return
-            imgsz = check_img_size(imgsz, s=model.stride.max())  # check img_size
+            imgsz = check_img_size(imgsz, s=stride)  # check img_size
             if half:
                 model.half()  # to FP16
             
@@ -2376,11 +2379,11 @@ class MainWindow(QMainWindow, WindowMixin):
                     img = img.unsqueeze(0)
 
                 # Inference
-                pred = model(img, augment=False)[0]
+                pred = model(img, augment=False, visualize=False)
 
                 # Apply NMS
-                pred = non_max_suppression(pred, conf_thres, iou_thres, classes=None, agnostic=False)
-                t2 = torch_utils.time_synchronized()
+                pred = non_max_suppression(pred, conf_thres, iou_thres, classes=None)
+            
 
                 # Process detections
                 for i, det in enumerate(pred):  # detections per image
@@ -2422,7 +2425,85 @@ class MainWindow(QMainWindow, WindowMixin):
             QMessageBox.information(self,u'Done!',u'auto labeling done, please reload img folder')  
         except Exception as e:
             QMessageBox.information(self,u'Sorry!',u'something is wrong. ({})'.format(e))
+            print(e.__traceback__.tb_frame.f_globals["__file__"])
+            print(e.__traceback__.tb_lineno)
                  
+    def yolox_auto_labeling(self):
+        try:
+            tree = ET.ElementTree(file='./data/origin.xml')
+            root=tree.getroot()
+            for child in root.findall('object'):
+                template_obj=child#保存一个物体的样板
+                root.remove(child)
+            tree.write('./data/template.xml')
+            #=====def some function=====
+            def change_obj_property(detect_result,template_obj):
+                temp_obj=template_obj
+                for child in temp_obj:
+                    key=child.tag
+                    if key in detect_result.keys():
+                        child.text=detect_result[key]
+                    if key=='bndbox':
+                        for gchild in child:
+                            gkey=gchild.tag
+                            gchild.text=str(detect_result[gkey])
+                return temp_obj
+                
+            def change_result_type_yolov5(boxes,scores,labels):
+                result=[]
+                for box, score, label in zip(boxes, scores, labels):
+                    if score>0.3:
+                        try:
+                            new_obj={}
+                            new_obj['name']=label
+                            new_obj['xmin']=int(box[0])
+                            new_obj['ymin']=int(box[1])
+                            new_obj['xmax']=int(box[2])
+                            new_obj['ymax']=int(box[3])
+                            result.append(new_obj)
+                        except:
+                            print('labels_info have no label: '+str(label))
+                            pass
+                return result
+
+            source=os.path.dirname(self.filePath)
+            xml_path=self.defaultSaveDir
+            
+            weight_path='pytorch_yolox/weights'
+            weight_list=[]
+            for item in sorted(os.listdir(weight_path)):
+                if item.endswith('.h5') or item.endswith('.pt') or item.endswith('.pth'):
+                    weight_list.append(item)
+            items = tuple(weight_list)
+            if len(weight_list)>0 :
+                weights, ok = QInputDialog.getItem(self, "Select",
+                "Model weights file(weights file should under 'pytorch_yolovx/weights'):", items, 0, False)
+                if not ok:
+                    return
+                else:
+                    weights=os.path.join(weight_path,weights)
+            else:
+                weights,_ = QFileDialog.getOpenFileName(self,"'pytorch_yolox/weights' is empty, choose model weights file:")
+                if not (weights.endswith('.pt') or weights.endswith('.pth')):
+                    QMessageBox.information(self,u'Wrong!',u'weights file must endswith .h5 or .pt or .pth')
+                    return
+            conf_thres=0.3
+            iou_thres=0.5
+            # Initialize
+
+        except Exception as e:
+            QMessageBox.information(self,u'Sorry!',u'something in YOLOX is wrong. ({})'.format(e))
+
+
+
+
+
+
+
+
+
+
+
     def auto_labeling(self):
         """use model to labeling unannotated imgs.
         you should choose model type as well as model weights file and input label name.
