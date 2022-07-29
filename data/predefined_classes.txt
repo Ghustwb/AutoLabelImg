@@ -1,6 +1,2 @@
-person
-car
-motorbike
-bicycle
-bus
-truck
+Face
+LicensePlate
