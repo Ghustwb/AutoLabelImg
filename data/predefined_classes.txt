@@ -1,2 +1,2 @@
-Face
-LicensePlate
+face
+Licenseplate

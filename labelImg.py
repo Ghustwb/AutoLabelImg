@@ -2205,11 +2205,17 @@ class MainWindow(QMainWindow, WindowMixin):
         try:
             label_transform={}
             origin, ok=QInputDialog.getText(self, 'Text Input Dialog', "Input origin label name(only sigle label)：")
-            if (not ok) and origin !='':
+            if (not ok):
+                return
+            if origin == "":
+                QMessageBox.information(self,u'Sorry!',u'Please input name. ')
                 return
             origin=origin.replace(" ","")
             target, ok=QInputDialog.getText(self, 'Text Input Dialog', "Input target label name(only sigle label)：")
-            if (not ok) and target != '':
+            if (not ok) :
+                return
+            if target == "":
+                QMessageBox.information(self,u'Sorry!',u'Please input name. ')
                 return
             target=target.replace(" ","")
             label_transform[origin]=target
@@ -2217,9 +2223,12 @@ class MainWindow(QMainWindow, WindowMixin):
             img_folder_path=os.path.dirname(self.filePath)
             imglist = natsort.natsorted(os.listdir(img_folder_path))
             xmllist = natsort.natsorted(os.listdir(xml_folder_path))
+            need_to_write = False
+            changed = False
             for item in xmllist:
                 if item.endswith('.xml'):
-                    if (item[0:-4]+'.jpg') in imglist:
+                    img_name = os.path.basename(item).replace(".xml" ,".jpg")
+                    if img_name in imglist:
                         xmlPath=os.path.join(os.path.abspath(xml_folder_path), item)
                         imgPath=os.path.join(os.path.abspath(img_folder_path), item[0:-4])+'.jpg'
                         tree = ET.ElementTree(file=xmlPath)
@@ -2227,12 +2236,18 @@ class MainWindow(QMainWindow, WindowMixin):
                         for obj in root.findall('object'):
                             if obj.find('name').text in label_transform.keys():
                                 obj.find('name').text=label_transform[obj.find('name').text]
-                        tree.write(xmlPath)
-                    else:
-                        print(item,'has no corresponding img')
-                        os.remove(os.path.join(os.path.abspath(xml_folder_path), item))
-                        
-            QMessageBox.information(self,u'Done!',u'label name changed!')
+                                need_to_write = True
+                        if(need_to_write):        
+                            tree.write(xmlPath)
+                            changed = True
+                    need_to_write = False
+                    #else:
+                        #print(item,'has no corresponding img')
+                        #os.remove(os.path.join(os.path.abspath(xml_folder_path), item))
+            if(changed):
+                QMessageBox.information(self,u'Done!',u'label name changed.')
+            else:
+                QMessageBox.information(self,u'Sorry!',u'Not found label name in xml file, please check input.')
         except Exception as e:
             QMessageBox.information(self,u'Sorry!',u'something is wrong in change_label_name. ({})'.format(e))
         
@@ -2247,6 +2262,7 @@ class MainWindow(QMainWindow, WindowMixin):
             img_folder_path=os.path.dirname(self.filePath)
             xmllist = os.listdir(xml_folder_path)
             folder_info={'folder':'JPEGImages','filename':'none','path':'none'}
+            need_to_write = False
             for item in xmllist:
                 if item.endswith('.xml'):
                     folder_info['filename']=item[0:-4]+'.jpg'
@@ -2257,18 +2273,29 @@ class MainWindow(QMainWindow, WindowMixin):
                     tree = ET.ElementTree(file=xmlPath)
                     root=tree.getroot()
                     try:
-                        root.find('size').find('width').text=str(size[1])
-                        root.find('size').find('height').text=str(size[0])
-                        root.find('size').find('depth').text=str(size[2])
+                        if(root.find('size').find('width').text != str(size[1])):
+                            root.find('size').find('width').text=str(size[1])
+                            need_to_write = True
+                        if(root.find('size').find('height').text != str(size[0])):
+                            root.find('size').find('height').text=str(size[0])
+                            need_to_write = True
+                        if(root.find('size').find('depth').text != str(size[2])):
+                            root.find('size').find('depth').text=str(size[2])
+                            need_to_write = True
                     except:
                         print('xml has no size attribute!')
                     for key in folder_info.keys():
                         try:
-                            root.find(key).text=folder_info[key]
+                            if(root.find(key).text != folder_info[key]):
+                                root.find(key).text=folder_info[key]
+                                need_to_write = True
                         except:
                             print(item,': attribute',key,'not exist!')
                             pass
-                    tree.write(xmlPath)
+                    if(need_to_write):
+                        tree.write(xmlPath)
+                        print(item,': fixed!')
+                    need_to_write = False
             QMessageBox.information(self,u"Done!",u"fix xml's property done!")
         except Exception as e:
             QMessageBox.information(self,u'Sorry!',u'something is wrong in fix_xml_property. ({})'.format(e))
